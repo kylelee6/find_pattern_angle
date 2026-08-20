@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>패턴 각도 추정기 — 브라우저에서 바로 실행</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --page: #f9f9f7; --text-primary: #0b0b0b;
+    --text-secondary: #52514e; --text-muted: #898781; --grid: #e1e0d9;
+    --axis: #c3c2b7; --series-1: #2a78d6; --series-2: #008300;
+    --border: rgba(11,11,11,0.10); --callout-bg: #f0efec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { color-scheme: dark; --surface-1:#1a1a19; --page:#0d0d0d; --text-primary:#fff;
+      --text-secondary:#c3c2b7; --text-muted:#898781; --grid:#2c2c2a; --axis:#383835;
+      --series-1:#3987e5; --series-2:#008300; --border: rgba(255,255,255,0.10); --callout-bg:#22221f; }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--page);
+    color: var(--text-primary); margin: 0; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 1.35rem; margin: 0 0 6px; }
+  .sub { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.6; margin: 0 0 20px; }
+  nav.top { font-size: 0.85rem; margin-bottom: 18px; }
+  nav.top a { color: var(--series-1); text-decoration: none; margin-right: 16px; }
+  nav.top a:hover { text-decoration: underline; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px; margin-bottom: 18px; }
+  .drop { border: 1.5px dashed var(--axis); border-radius: 10px; padding: 16px; text-align: center;
+    cursor: pointer; transition: border-color .15s; position: relative; max-width: 360px; }
+  .drop:hover { border-color: var(--series-1); }
+  .drop input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .drop img { max-width: 100%; max-height: 200px; border-radius: 6px; display: block; margin: 8px auto 0; }
+  .drop .ph { color: var(--text-muted); font-size: 0.85rem; }
+  .label { font-size: 0.8rem; color: var(--text-secondary); font-weight: 600; margin-bottom: 6px; display: block; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--border); cursor: pointer;
+    padding: 10px 16px; background: var(--series-1); color: white; font-weight: 600; }
+  button.secondary { background: transparent; color: var(--text-primary); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  input[type=number] { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--axis);
+    background: var(--surface-1); color: var(--text-primary); width: 90px; }
+  details.adv { margin-top: 14px; font-size: 0.85rem; }
+  details.adv summary { cursor: pointer; color: var(--text-secondary); font-weight: 600; }
+  details.adv .row { margin-top: 12px; }
+  .progress-wrap { margin-top: 14px; display: none; }
+  .progress-bar-bg { background: var(--grid); border-radius: 6px; height: 8px; overflow: hidden; }
+  .progress-bar { background: var(--series-1); height: 100%; width: 0%; transition: width .1s; }
+  .progress-text { font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .results { display: none; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat { background: var(--callout-bg); border-radius: 10px; padding: 12px 14px; }
+  .stat .k { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; }
+  .stat .v { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  canvas#resultCanvas { max-width: 100%; height: auto; border-radius: 10px; background: var(--surface-1);
+    border: 1px solid var(--border); display: block; }
+  .note { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6; }
+  .warn { background: #fff3cd; color: #664d03; border-radius: 8px; padding: 10px 12px; font-size: 0.85rem; margin-top: 10px; }
+  @media (prefers-color-scheme: dark) { .warn { background: #3a2f14; color: #ffdf8a; } }
+  .steps { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.9; }
+  code { background: var(--callout-bg); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+  .footer-note { font-size: 0.78rem; color: var(--text-muted); margin-top: 30px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="top">
+    <a href="index.html">&larr; 프로젝트 소개</a>
+    <a href="https://github.com/kylelee6/find_pattern_angle" target="_blank">GitHub 저장소</a>
+  </nav>
+
+  <h1>📐 패턴 각도 추정기</h1>
+  <p class="sub">
+    반복되는 줄무늬/그리드 패턴이 있는 영상 <b>한 장</b>을 올리면, 그 패턴이 이미지 축 대비 몇 도
+    기울어져 있는지 계산합니다. 서버로 이미지를 전송하지 않고 이 브라우저 안에서
+    (OpenCV.js, WebAssembly) 전부 계산합니다.
+  </p>
+
+  <div class="card">
+    <span class="label">이미지</span>
+    <label class="drop" id="dropImg">
+      <input type="file" id="fileImg" accept="image/*">
+      <div class="ph" id="phImg">클릭하거나 파일을 끌어놓으세요</div>
+      <img id="imgMain" style="display:none">
+    </label>
+
+    <div class="row">
+      <button class="secondary" id="btnExample1">📷 예제 1 (sample1.jpg)</button>
+      <button class="secondary" id="btnExample2">📷 예제 2 (sample1_30.jpg, 예제1에서 약 30° 회전)</button>
+    </div>
+    <p class="note">두 예제는 같은 웨이퍼 다이를 촬영한 뒤 하나를 약 30° 돌린 영상입니다. 둘 다 실행해
+      추정 각도의 차이가 30°에 가까운지 비교해보세요.</p>
+
+    <details class="adv">
+      <summary>고급 옵션</summary>
+      <div class="row">
+        <label class="label" style="margin:0">각도 스텝(coarse, °)
+          <input type="number" id="optStep" value="0.5" min="0.05" max="2" step="0.05">
+        </label>
+        <label class="label" style="margin:0">중앙 마스크 비율
+          <input type="number" id="optKeepRatio" value="1.0" min="0.3" max="1.0" step="0.05">
+        </label>
+        <label class="label" style="margin:0">다운샘플 최대 변(px)
+          <input type="number" id="optMaxSize" value="512" min="128" max="1024" step="32">
+        </label>
+      </div>
+      <p class="note" style="margin-top:8px">스텝을 작게 할수록 정밀하지만 느려집니다. 중앙 마스크 비율은
+        웨이퍼처럼 둥근 에지가 있는 영상에서 1보다 작게 주면 에지 영향을 줄일 수 있습니다.</p>
+    </details>
+
+    <div class="row">
+      <button id="btnRun" disabled>▶ 각도 계산 시작</button>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-text" id="progressText">대기 중</div>
+    </div>
+    <div id="warnBox"></div>
+  </div>
+
+  <div class="card results" id="resultsCard">
+    <h2 style="font-size:1.05rem;margin:0 0 14px">결과</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="k">최종 각도</div><div class="v" id="rAngle">–</div></div>
+      <div class="stat"><div class="k">coarse 각도</div><div class="v" id="rCoarse">–</div></div>
+      <div class="stat"><div class="k">등가 각도(0~180°)</div><div class="v" id="rMod">–</div></div>
+      <div class="stat"><div class="k">계산 시간</div><div class="v" id="rTime">–</div></div>
+    </div>
+    <canvas id="resultCanvas"></canvas>
+    <p class="note" id="resultCaption" style="margin-top:10px"></p>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1.05rem;margin:0 0 10px">이 도구는 어떻게 동작하나요</h2>
+    <ol class="steps">
+      <li>영상을 그레이스케일로 바꾸고 Hanning 윈도우를 적용해 경계 아티팩트를 억제합니다.</li>
+      <li>0°~180°를 성기게 훑으며, 각 후보 각도로 영상을 회전한 뒤 열(column) 합으로 1D 프로파일을 만들고
+        그 프로파일의 1차 차분 에너지(고주파 성분)를 지표로 계산합니다.</li>
+      <li>그리드 선과 정확히 정렬되는 각도에서 열 경계가 급격히 바뀌며 에너지가 최댓값을 가집니다
+        (coarse-to-fine: 최댓값 근방만 촘촘한 스텝 + 3차보간으로 재탐색).</li>
+      <li>3점 포물선 보간으로 서브픽셀(서브디그리) 각도를 산출합니다.</li>
+    </ol>
+    <p class="note">
+      이 웹 버전은 시연을 위해 <a href="https://github.com/kylelee6/find_pattern_angle/blob/main/estimate_pattern_angle.py" target="_blank">estimate_pattern_angle.py</a>의
+      핵심 알고리즘(회전 → 열 합 → 고주파 에너지 → coarse-to-fine 탐색)을 브라우저에서 재현한 것입니다.
+      배치 처리·CSV 출력·정밀 분석에는 파이썬 버전을 사용하세요.
+    </p>
+    <p class="note">
+      그리드 패턴은 90°/180° 대칭이 있어 각도는 절대 방향이 아니라 <b>180° 주기</b>로 나옵니다
+      (예: 179.67°와 -0.33°는 같은 선 방향입니다).
+    </p>
+  </div>
+
+  <p class="footer-note">
+    모든 계산은 로컬 브라우저에서 실행되며 이미지는 어디로도 전송되지 않습니다.
+  </p>
+</div>
+
+<script src="https://docs.opencv.org/4.x/opencv.js"></script>
+<script>
+'use strict';
+
+function cvReady() {
+  return new Promise(resolve => {
+    if (typeof cv !== 'undefined' && cv.Mat) { resolve(); return; }
+    const iv = setInterval(() => {
+      if (typeof cv !== 'undefined' && cv.Mat) { clearInterval(iv); resolve(); }
+    }, 100);
+  });
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function setupDrop(dropId, fileId, imgId, phId, onLoaded) {
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(fileId);
+  const img = document.getElementById(imgId);
+  const ph = document.getElementById(phId);
+  input.addEventListener('change', () => {
+    if (!input.files || !input.files[0]) return;
+    const url = URL.createObjectURL(input.files[0]);
+    img.onload = () => { ph.style.display = 'none'; img.style.display = 'block'; onLoaded(img); };
+    img.src = url;
+  });
+}
+
+let mainImg = null;
+function checkReady() {
+  document.getElementById('btnRun').disabled = !mainImg;
+}
+setupDrop('dropImg', 'fileImg', 'imgMain', 'phImg', img => { mainImg = img; checkReady(); });
+
+function loadExample(src) {
+  const im = document.getElementById('imgMain');
+  const ph = document.getElementById('phImg');
+  im.onload = () => { ph.style.display = 'none'; im.style.display = 'block'; mainImg = im; checkReady(); };
+  im.src = src;
+}
+document.getElementById('btnExample1').addEventListener('click', () => loadExample('images/sample1.jpg'));
+document.getElementById('btnExample2').addEventListener('click', () => loadExample('images/sample1_30.jpg'));
+
+// ------------------------------
+// 영상 전처리: 그레이스케일(CV_32F) + Hanning 윈도우 + 중앙 마스크
+// ------------------------------
+function imgToProcessedFloat(imgEl, keepRatio) {
+  const c = document.createElement('canvas');
+  c.width = imgEl.naturalWidth; c.height = imgEl.naturalHeight;
+  c.getContext('2d').drawImage(imgEl, 0, 0);
+  const rgba = cv.imread(c);
+  const gray = new cv.Mat();
+  cv.cvtColor(rgba, gray, cv.COLOR_RGBA2GRAY);
+  rgba.delete();
+
+  const grayF = new cv.Mat();
+  gray.convertTo(grayF, cv.CV_32F);
+  gray.delete();
+
+  const h = grayF.rows, w = grayF.cols;
+
+  // Hanning window (numpy.hanning과 동일한 정의)
+  const hh = new Float32Array(h), hw = new Float32Array(w);
+  for (let i = 0; i < h; i++) hh[i] = h > 1 ? 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (h - 1)) : 1;
+  for (let j = 0; j < w; j++) hw[j] = w > 1 ? 0.5 - 0.5 * Math.cos(2 * Math.PI * j / (w - 1)) : 1;
+  const win = new cv.Mat(h, w, cv.CV_32F);
+  const winData = win.data32F;
+  for (let i = 0; i < h; i++) {
+    const rowBase = i * w;
+    const hi = hh[i];
+    for (let j = 0; j < w; j++) winData[rowBase + j] = hi * hw[j];
+  }
+  const windowed = new cv.Mat();
+  cv.multiply(grayF, win, windowed);
+  grayF.delete(); win.delete();
+
+  // 중앙 원형 마스크 (keepRatio < 1일 때만)
+  let masked = windowed;
+  if (keepRatio < 0.999) {
+    const cy = h / 2.0, cx = w / 2.0;
+    const rad = 0.5 * keepRatio * Math.min(h, w);
+    const mask = new cv.Mat(h, w, cv.CV_32F);
+    const md = mask.data32F;
+    for (let i = 0; i < h; i++) {
+      const dy = i - cy;
+      const rowBase = i * w;
+      for (let j = 0; j < w; j++) {
+        const dx = j - cx;
+        md[rowBase + j] = (Math.hypot(dx, dy) <= rad) ? 1 : 0;
+      }
+    }
+    masked = new cv.Mat();
+    cv.multiply(windowed, mask, masked);
+    windowed.delete(); mask.delete();
+  }
+  return masked; // CV_32F
+}
+
+function resizeForSpeed(mat, maxSize) {
+  const h = mat.rows, w = mat.cols;
+  const m = Math.max(h, w);
+  if (m <= maxSize) return mat;
+  const scale = maxSize / m;
+  const out = new cv.Mat();
+  cv.resize(mat, out, new cv.Size(Math.round(w * scale), Math.round(h * scale)), 0, 0, cv.INTER_AREA);
+  mat.delete();
+  return out;
+}
+
+// 후보 각도 하나 평가: 회전 -> 열 합 -> 1차 차분 에너지
+function metricAtAngle(img, thetaDeg, w, h, interpFlag) {
+  const M = cv.getRotationMatrix2D(new cv.Point(w / 2.0, h / 2.0), -thetaDeg, 1.0);
+  const rot = new cv.Mat();
+  cv.warpAffine(img, rot, M, new cv.Size(w, h), interpFlag, cv.BORDER_REFLECT_101, new cv.Scalar());
+  const colSum = new cv.Mat();
+  cv.reduce(rot, colSum, 0, cv.REDUCE_SUM, cv.CV_32F);
+  const data = colSum.data32F;
+  let sq = 0;
+  for (let i = 1; i < data.length; i++) {
+    const d = data[i] - data[i - 1];
+    sq += d * d;
+  }
+  const metric = sq / (data.length - 1);
+  M.delete(); rot.delete(); colSum.delete();
+  return metric;
+}
+
+async function runEstimation() {
+  const btn = document.getElementById('btnRun');
+  btn.disabled = true;
+  document.getElementById('warnBox').innerHTML = '';
+  document.getElementById('resultsCard').style.display = 'none';
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar = document.getElementById('progressBar');
+  const progressText = document.getElementById('progressText');
+  progressWrap.style.display = 'block';
+
+  const step = Math.max(0.05, parseFloat(document.getElementById('optStep').value) || 0.5);
+  const keepRatio = Math.min(1.0, Math.max(0.3, parseFloat(document.getElementById('optKeepRatio').value) || 1.0));
+  const maxSize = Math.max(128, Math.min(1024, parseInt(document.getElementById('optMaxSize').value, 10) || 512));
+
+  const t0 = performance.now();
+  let img = imgToProcessedFloat(mainImg, keepRatio);
+  img = resizeForSpeed(img, maxSize);
+  const w = img.cols, h = img.rows;
+
+  const coarseAngles = [];
+  for (let t = step / 2; t < 180.0; t += step) coarseAngles.push(t);
+
+  const refineHalf = Math.max(0.5, 10 * step);
+  const refineStep = Math.max(0.02, step / 5);
+  const totalSteps = coarseAngles.length + Math.round((2 * refineHalf) / refineStep) + 2;
+  let stepCount = 0;
+  function bump(label) {
+    stepCount++;
+    const pct = Math.min(100, Math.round(100 * stepCount / totalSteps));
+    progressBar.style.width = pct + '%';
+    progressText.textContent = pct + '% — ' + label;
+  }
+
+  let coarseBest = null;
+  for (const th of coarseAngles) {
+    const m = metricAtAngle(img, th, w, h, cv.INTER_LINEAR);
+    if (!coarseBest || m > coarseBest.metric) coarseBest = { angle: th, metric: m };
+    bump('각도 탐색(coarse) ' + th.toFixed(2) + '°');
+    if (stepCount % 8 === 0) await sleep(0);
+  }
+  const coarseAngle = coarseBest.angle;
+
+  const refStart = Math.max(0.0, coarseAngle - refineHalf);
+  const refEnd = Math.min(180.0 - refineStep, coarseAngle + refineHalf);
+  const refThetas = [];
+  for (let t = refStart; t <= refEnd + 1e-9; t += refineStep) refThetas.push(t);
+
+  const refMetrics = [];
+  for (const th of refThetas) {
+    const m = metricAtAngle(img, th, w, h, cv.INTER_CUBIC);
+    refMetrics.push(m);
+    bump('각도 탐색(정밀) ' + th.toFixed(3) + '°');
+    if (stepCount % 8 === 0) await sleep(0);
+  }
+  let j = 0;
+  for (let i = 1; i < refMetrics.length; i++) if (refMetrics[i] > refMetrics[j]) j = i;
+  let bestAngle = refThetas[j];
+
+  if (j > 0 && j < refThetas.length - 1) {
+    const y1 = refMetrics[j - 1], y2 = refMetrics[j], y3 = refMetrics[j + 1];
+    const hstep = refThetas[1] - refThetas[0];
+    const denom = y1 - 2 * y2 + y3;
+    if (Math.abs(denom) > 1e-12) bestAngle = refThetas[j] + 0.5 * (y1 - y3) / denom * hstep;
+  }
+
+  img.delete();
+  const elapsed = (performance.now() - t0) / 1000;
+
+  progressBar.style.width = '100%';
+  progressText.textContent = '완료';
+  await sleep(150);
+  progressWrap.style.display = 'none';
+  btn.disabled = false;
+
+  const modAngle = ((bestAngle % 180) + 180) % 180;
+  const equivAngle = modAngle > 90 ? modAngle - 180 : modAngle;
+
+  document.getElementById('rAngle').textContent = bestAngle.toFixed(2) + '°';
+  document.getElementById('rCoarse').textContent = coarseAngle.toFixed(2) + '°';
+  document.getElementById('rMod').textContent = equivAngle.toFixed(2) + '°';
+  document.getElementById('rTime').textContent = elapsed.toFixed(1) + 's';
+
+  drawResult(mainImg, bestAngle);
+  document.getElementById('resultsCard').style.display = 'block';
+}
+
+function drawResult(imgEl, angleDeg) {
+  const canvas = document.getElementById('resultCanvas');
+  const maxW = 480;
+  const scale = Math.min(1, maxW / imgEl.naturalWidth);
+  const w = Math.round(imgEl.naturalWidth * scale);
+  const h = Math.round(imgEl.naturalHeight * scale);
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(imgEl, 0, 0, w, h);
+
+  const cx = w / 2, cy = h / 2;
+  const drawAngle = (angleDeg + 90.0) % 180.0; // 그리드 선 방향
+  const rad = drawAngle * Math.PI / 180;
+  const L = 0.35 * Math.min(w, h);
+  const x2 = cx + L * Math.cos(rad);
+  const y2 = cy - L * Math.sin(rad);
+
+  ctx.strokeStyle = '#00e05a';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+
+  // 화살촉
+  const lineAng = Math.atan2(y2 - cy, x2 - cx);
+  const headLen = Math.max(8, L * 0.08);
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - headLen * Math.cos(lineAng - Math.PI / 8), y2 - headLen * Math.sin(lineAng - Math.PI / 8));
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - headLen * Math.cos(lineAng + Math.PI / 8), y2 - headLen * Math.sin(lineAng + Math.PI / 8));
+  ctx.stroke();
+
+  // 각도 텍스트
+  const text = angleDeg.toFixed(2) + '°';
+  ctx.font = 'bold 20px system-ui, sans-serif';
+  const metrics = ctx.measureText(text);
+  const pad = 8;
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillRect(4, 4, metrics.width + pad * 2, 30);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, 4 + pad, 26);
+
+  document.getElementById('resultCaption').textContent =
+    '녹색 화살표는 검출된 그리드 선 방향(θ+90°)을 가리킵니다. 텍스트 각도는 라돈 추정값(θ) 그 자체입니다.';
+}
+
+document.getElementById('btnRun').addEventListener('click', () => {
+  cvReady().then(runEstimation);
+});
+</script>
+</body>
+</html>

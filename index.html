@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>패턴 각도 추정 — find_pattern_angle</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --page: #f9f9f7; --text-primary: #0b0b0b;
+    --text-secondary: #52514e; --text-muted: #898781; --grid: #e1e0d9;
+    --axis: #c3c2b7; --series-1: #2a78d6; --series-2: #008300;
+    --border: rgba(11,11,11,0.10); --callout-bg: #f0efec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { color-scheme: dark; --surface-1:#1a1a19; --page:#0d0d0d; --text-primary:#fff;
+      --text-secondary:#c3c2b7; --text-muted:#898781; --grid:#2c2c2a; --axis:#383835;
+      --series-1:#3987e5; --series-2:#008300; --border: rgba(255,255,255,0.10); --callout-bg:#22221f; }
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--page);
+    color: var(--text-primary); margin: 0; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 48px 20px 60px; }
+  h1 { font-size: 1.9rem; margin: 0 0 10px; }
+  .tagline { color: var(--text-secondary); font-size: 1.05rem; line-height: 1.6; margin: 0 0 32px; max-width: 640px; }
+  .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 36px; }
+  @media (max-width: 700px) { .cards { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px; text-decoration: none; color: var(--text-primary); display: block;
+    transition: border-color .15s, transform .15s;
+  }
+  .card:hover { border-color: var(--series-1); transform: translateY(-2px); }
+  .card .emoji { font-size: 1.6rem; margin-bottom: 10px; display: block; }
+  .card h2 { font-size: 1.05rem; margin: 0 0 6px; }
+  .card p { font-size: 0.85rem; color: var(--text-secondary); margin: 0; line-height: 1.5; }
+  .card.primary { background: var(--series-1); color: white; border-color: var(--series-1); }
+  .card.primary p { color: rgba(255,255,255,0.85); }
+
+  section { margin-bottom: 32px; }
+  h3 { font-size: 1.1rem; margin: 0 0 14px; }
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 700px) { .steps { grid-template-columns: 1fr 1fr; } }
+  .step { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.5; }
+  .step b { color: var(--text-primary); display: block; margin-bottom: 4px; font-size: 0.9rem; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; }
+  .stat { background: var(--callout-bg); border-radius: 10px; padding: 14px 16px; }
+  .stat .k { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 4px; }
+  .stat .v { font-size: 1.2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  code { background: var(--callout-bg); padding: 1px 6px; border-radius: 4px; font-size: 0.9em; }
+  .note { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.7; }
+  footer { font-size: 0.78rem; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 20px; margin-top: 40px; }
+  footer a { color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📐 find_pattern_angle</h1>
+  <p class="tagline">
+    반도체 웨이퍼 다이 그리드처럼 반복되는 줄무늬 패턴이 있는 영상 <b>한 장</b>만 있으면, 영상 처리로
+    그 패턴이 이미지 축 대비 몇 도 기울어져 있는지 역산할 수 있습니다. 스테이지·카메라 정렬 확인이나
+    웨이퍼 회전 오차 측정에 쓰는 기법입니다.
+  </p>
+
+  <div class="cards">
+    <a class="card primary" href="tool.html">
+      <span class="emoji">📐</span>
+      <h2>지금 사용해보기</h2>
+      <p>이미지 한 장을 올리면 브라우저에서 바로 패턴 각도를 계산합니다. 서버 전송 없음.</p>
+    </a>
+    <a class="card" href="https://github.com/kylelee6/find_pattern_angle" target="_blank">
+      <span class="emoji">💻</span>
+      <h2>소스 코드 (GitHub)</h2>
+      <p>Python 구현체(<code>estimate_pattern_angle.py</code>)와 검증용 스크립트, 샘플 이미지를 모두 확인할 수 있습니다.</p>
+    </a>
+  </div>
+
+  <section>
+    <h3>어떻게 동작하나요</h3>
+    <div class="steps">
+      <div class="step"><b>1. 전처리</b>그레이스케일 변환 + Hanning 윈도우, 필요 시 중앙 원형 마스크를 적용합니다.</div>
+      <div class="step"><b>2. 각도 탐색</b>0~180°를 성기게 훑으며 각 각도로 회전 후 열 합의 고주파 에너지를 계산합니다.</div>
+      <div class="step"><b>3. 정밀 재탐색</b>coarse 최댓값 근방만 촘촘한 스텝 + 3차보간으로 다시 훑습니다.</div>
+      <div class="step"><b>4. 서브디그리 보간</b>3점 포물선 보간으로 최종 각도를 서브픽셀 단위로 산출합니다.</div>
+    </div>
+  </section>
+
+  <section>
+    <h3>예제로 확인한 정확도</h3>
+    <div class="stat-grid">
+      <div class="stat"><div class="k">sample1.jpg 추정 각도</div><div class="v">179.67° (≡ -0.33°)</div></div>
+      <div class="stat"><div class="k">sample1_30.jpg 추정 각도</div><div class="v">29.62°</div></div>
+      <div class="stat"><div class="k">두 값의 차이</div><div class="v">29.95°</div></div>
+      <div class="stat"><div class="k">실제 회전(약 30°)과의 오차</div><div class="v">~0.05°</div></div>
+    </div>
+    <p class="note" style="margin-top:14px">
+      두 샘플 이미지는 같은 웨이퍼 다이를 촬영한 뒤 하나를 약 30° 돌린 것입니다.
+      <a href="tool.html">웹 도구</a>에서 두 예제 버튼으로 직접 확인해볼 수 있습니다.
+    </p>
+  </section>
+
+  <footer>
+    Python 구현: <code>estimate_pattern_angle.py</code> · 웹 데모: OpenCV.js(WebAssembly), 서버 없음 ·
+    <a href="https://github.com/kylelee6/find_pattern_angle">GitHub 저장소</a>
+  </footer>
+</div>
+</body>
+</html>
